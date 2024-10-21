@@ -1,39 +1,55 @@
 import logging
-from telegram import Update
+import os
+from telegram import Update, User
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
 
-# Replace with your actual User ID
-YOUR_USER_ID = 2011056922  # Your User ID from the previous step
+TOKEN = os.getenv('TOKEN')
+YOUR_USER_ID = 2011056922  # Your Telegram ID
 
-# Bot token from BotFather
-TOKEN = '7741750918:AAF2NKPXR4WI_gQztdZ64Xo8sYLKW6un3LU'
+user_profiles = {}
 
-# Configure logging to monitor bot activity
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+    level=logging.INFO)
+
 
 async def start(update: Update, context: CallbackContext):
-    """Handler for the /start command."""
-    await update.message.reply_text("Bot is running! All incoming messages will be forwarded to you.")
+    menu_message = (
+        "Welcome to the bot!\n\n"
+        "I will forward your messages to the admin. "
+        "Feel free to send your message anytime.\n\n"
+        "You'll receive a confirmation when your message is sent successfully."
+    )
+    await update.message.reply_text(menu_message)
+
+
+async def store_user_profile(user: User):
+    user_profiles[user.id] = {
+        'full_name': user.full_name,
+        'username': user.username,
+        'id': user.id
+    }
+
 
 async def forward_message(update: Update, context: CallbackContext):
-    """Forward all incoming messages to your chat."""
     if update.message:
-        user_id = update.message.from_user.id
-        first_name = update.message.from_user.first_name
-        text = update.message.text
+        user = update.message.from_user
+        await store_user_profile(user)
 
-        # Log and forward the message to your Telegram chat
-        logging.info(f"From {first_name} (ID: {user_id}): {text}")
-        await context.bot.send_message(
-            chat_id=YOUR_USER_ID,
-            text=f"From {first_name} (ID: {user_id}): {text}"
-        )
+        message = (f"From: {user.full_name} (@{user.username})\n"
+                   f"ID: {user.id}\n"
+                   f"Message: {update.message.text}")
+
+        await context.bot.send_message(chat_id=YOUR_USER_ID, text=message)
+        await update.message.reply_text("Your message was sent successfully!")
+
 
 async def reply(update: Update, context: CallbackContext):
-    """Reply to a user with the given user ID."""
+    if update.message.from_user.id != YOUR_USER_ID:
+        await update.message.reply_text(
+            "Unauthorized! Only the bot admin can use this command.")
+        return
+
     if len(context.args) < 2:
         await update.message.reply_text("Usage: /reply <user_id> <message>")
         return
@@ -41,21 +57,20 @@ async def reply(update: Update, context: CallbackContext):
     user_id = int(context.args[0])
     reply_message = ' '.join(context.args[1:])
 
-    # Send the reply to the specified user
     await context.bot.send_message(chat_id=user_id, text=reply_message)
-    await update.message.reply_text("Reply sent!")
+    await update.message.reply_text(
+        f"Reply sent to {user_profiles[user_id]['full_name']} (@{user_profiles[user_id]['username']})."
+    )
+
 
 def main():
-    """Main function to start the bot."""
     application = ApplicationBuilder().token(TOKEN).build()
-
-    # Add command and message handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reply", reply))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_message))
-
-    # Start the bot
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, forward_message))
     application.run_polling()
+
 
 if __name__ == '__main__':
     main()
